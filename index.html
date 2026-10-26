@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Генератор отчётов по оценке компетенций</title>
+  <style>
+    :root {
+      --bg: #f3f6fb;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #667085;
+      --line: #dfe6f1;
+      --accent: #2f5bd3;
+      --accent-dark: #2347a8;
+      --accent-soft: #eef3ff;
+      --danger: #b42318;
+      --danger-bg: #feefed;
+      --ok: #18794e;
+      --ok-bg: #edf9f2;
+      --shadow: 0 16px 40px rgba(30, 41, 59, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 48px 16px 64px;
+      background:
+        radial-gradient(circle at top left, rgba(47, 91, 211, .10), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+      font: 16px/1.55 "Segoe UI", Roboto, Arial, sans-serif;
+    }
+
+    .wrap { width: 100%; max-width: 720px; margin: 0 auto; }
+
+    header { margin-bottom: 24px; }
+    h1 { margin: 0 0 10px; font-size: clamp(25px, 4vw, 32px); line-height: 1.2; }
+    header p { max-width: 640px; margin: 0; color: var(--muted); }
+
+    .card {
+      padding: 28px;
+      background: var(--card);
+      border: 1px solid rgba(223, 230, 241, .9);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .drop {
+      display: block;
+      padding: 34px 22px;
+      border: 2px dashed #cbd7ea;
+      border-radius: 14px;
+      background: #fbfcff;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .18s, background .18s, transform .18s;
+    }
+    .drop:hover, .drop.hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      transform: translateY(-1px);
+    }
+    .drop:focus-within { outline: 3px solid rgba(47, 91, 211, .2); outline-offset: 2px; }
+    .drop-icon { display: block; margin-bottom: 10px; color: var(--accent); font-size: 30px; line-height: 1; }
+    .drop strong { display: block; margin-bottom: 5px; font-size: 17px; }
+    .drop span { color: var(--muted); font-size: 14px; }
+    .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+    .file-info {
+      display: none;
+      margin-top: 14px;
+      padding: 12px 14px;
+      border: 1px solid #d8e3fa;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      font-size: 14px;
+      word-break: break-word;
+    }
+    .file-info.show { display: block; }
+
+    .field { display: block; margin-top: 16px; }
+    .field > span {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .field small { color: var(--muted); font-weight: 400; }
+    .field input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+    }
+    .field input:focus {
+      outline: 3px solid rgba(47, 91, 211, .18);
+      border-color: var(--accent);
+    }
+
+    button {
+      width: 100%;
+      margin-top: 18px;
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 11px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .18s, transform .18s;
+    }
+    button:hover:not(:disabled) { background: var(--accent-dark); transform: translateY(-1px); }
+    button:disabled { background: #aebbd4; cursor: not-allowed; }
+
+    .spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      margin-right: 8px;
+      border: 2px solid rgba(255, 255, 255, .45);
+      border-top-color: #fff;
+      border-radius: 50%;
+      vertical-align: -3px;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .notice {
+      margin-top: 18px;
+      padding: 13px 15px;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    .notice.hint { background: #f7f9fc; color: var(--muted); }
+    .notice.error { background: var(--danger-bg); color: var(--danger); }
+    .notice[hidden] { display: none; }
+
+    .result {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+    }
+    .result[hidden] { display: none; }
+    .result h2 { margin: 0 0 8px; font-size: 20px; }
+    .result p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+    .download {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border-radius: 10px;
+      background: var(--ok);
+      color: #fff;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background .18s;
+    }
+    .download:hover { background: #12613e; }
+    .meta { margin-top: 12px !important; font-size: 13px !important; }
+
+    footer { margin-top: 20px; color: var(--muted); font-size: 13px; text-align: center; }
+
+    @media (max-width: 520px) {
+      body { padding-top: 28px; }
+      .card { padding: 20px; }
+      .drop { padding: 28px 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Генератор отчётов по оценке компетенций</h1>
+      <p>Загрузите протокол интервью в формате .docx или .txt — GigaChat проанализирует его, а сервис подготовит готовый отчёт Word.</p>
+    </header>
+
+    <main class="card">
+      <form id="form" novalidate>
+        <label class="drop" id="drop" for="file">
+          <span class="drop-icon" aria-hidden="true">＋</span>
+          <strong>Выберите файл или перетащите его сюда</strong>
+          <span>.docx или .txt, до 15 МБ</span>
+          <input
+            type="file"
+            id="file"
+            name="file"
+            accept=".docx,.txt,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            required
+          />
+        </label>
+
+        <div class="file-info" id="fileInfo"></div>
+
+        <label class="field" for="targetRole">
+          <span>Целевая должность <small>(если не указана в протоколе)</small></span>
+          <input
+            type="text"
+            id="targetRole"
+            name="target_role"
+            placeholder="Например, заместитель директора"
+            maxlength="200"
+            autocomplete="off"
+          />
+        </label>
+
+        <button type="submit" id="submit">Сгенерировать</button>
+      </form>
+
+      <div class="notice hint" id="hint">
+        Генерация обычно занимает от 10 секунд до пары минут — всё зависит от размера протокола и GigaChat.
+      </div>
+
+      <div class="notice error" id="error" role="alert" hidden></div>
+
+      <section class="result" id="result" aria-live="polite" hidden>
+        <h2>Отчёт готов</h2>
+        <p>Данные из протокола перенесены в шаблон Word.</p>
+        <a class="download" id="download" href="#" download>Скачать отчёт .docx</a>
+        <p class="meta" id="resultMeta"></p>
+      </section>
+    </main>
+
+    <footer>Python + Flask · GigaChat API · docxtpl</footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const drop = document.getElementById('drop');
+    const input = document.getElementById('file');
+    const targetRole = document.getElementById('targetRole');
+    const fileInfo = document.getElementById('fileInfo');
+    const submit = document.getElementById('submit');
+    const hint = document.getElementById('hint');
+    const errorBox = document.getElementById('error');
+    const result = document.getElementById('result');
+    const download = document.getElementById('download');
+    const resultMeta = document.getElementById('resultMeta');
+
+    const MAX_BYTES = 15 * 1024 * 1024;
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' Б';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
+      return (bytes / 1024 / 1024).toFixed(2) + ' МБ';
+    }
+
+    function showError(message) {
+      errorBox.textContent = message || '';
+      errorBox.hidden = !message;
+    }
+
+    function resetResult() {
+      result.hidden = true;
+      download.href = '#';
+      resultMeta.textContent = '';
+    }
+
+    function describe(file) {
+      if (!file) {
+        fileInfo.textContent = '';
+        fileInfo.classList.remove('show');
+        return;
+      }
+      fileInfo.textContent = 'Выбран файл: ' + file.name + ' · ' + formatSize(file.size);
+      fileInfo.classList.add('show');
+    }
+
+    function validate(file) {
+      if (!file) return 'Файл не выбран.';
+      const name = file.name.toLowerCase();
+      if (!name.endsWith('.docx') && !name.endsWith('.txt')) {
+        return 'Нужен файл .docx или .txt.';
+      }
+      if (file.size === 0) return 'Файл пустой.';
+      if (file.size > MAX_BYTES) return 'Файл больше 15 МБ.';
+      return '';
+    }
+
+    input.addEventListener('change', () => {
+      showError('');
+      resetResult();
+      describe(input.files[0]);
+    });
+
+    ['dragenter', 'dragover'].forEach((type) => {
+      drop.addEventListener(type, (event) => {
+        event.preventDefault();
+        drop.classList.add('hover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach((type) => {
+      drop.addEventListener(type, () => drop.classList.remove('hover'));
+    });
+
+    drop.addEventListener('drop', (event) => {
+      event.preventDefault();
+      const files = event.dataTransfer.files;
+      if (!files || !files.length) return;
+      const transfer = new DataTransfer();
+      transfer.items.add(files[0]);
+      input.files = transfer.files;
+      showError('');
+      resetResult();
+      describe(input.files[0]);
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      showError('');
+      resetResult();
+
+      const file = input.files[0];
+      const problem = validate(file);
+      if (problem) {
+        showError(problem);
+        return;
+      }
+
+      const body = new FormData();
+      body.append('file', file);
+      body.append('target_role', targetRole.value.trim());
+
+      submit.disabled = true;
+      submit.innerHTML = '<span class="spinner"></span>Генерирую отчёт…';
+      hint.hidden = false;
+
+      try {
+        const response = await fetch('/generate', { method: 'POST', body });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Сервер вернул ошибку ' + response.status);
+        }
+
+        download.href = payload.download_url;
+        download.download = payload.filename || 'report.docx';
+        resultMeta.textContent = 'Файл: ' + (payload.filename || 'report.docx');
+        result.hidden = false;
+        result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (error) {
+        showError(error.message || 'Не удалось сгенерировать отчёт.');
+      } finally {
+        submit.disabled = false;
+        submit.textContent = 'Сгенерировать';
+      }
+    });
+  </script>
+</body>
+</html>
