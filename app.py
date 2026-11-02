@@ -970,6 +970,101 @@ def extract_evidence(
         return None
 
 
+
+def _load_reasoning_style_example():
+    try:
+        from docx import Document
+        d = Document(r"C:\Users\isaevdr\Desktop\15 10.docx")
+        parts = []
+        for p in d.paragraphs:
+            t = p.text.strip()
+            if not t:
+                continue
+            if any(x in t for x in ["СИЛЬНЫЕ", "Риски", "ЗАКЛЮЧЕНИЕ", "Итого", "Вывод"]):
+                continue
+            if 200 < len(t) < 600:
+                parts.append(t)
+                if len(' '.join(parts)) > 800:
+                    break
+        if parts:
+            return '\n\n'.join(parts)
+    except Exception:
+        pass
+    return ''
+
+def _analyst_facts_block(protocol_text, evidence, target_role_hint):
+    target = (target_role_hint or '').strip() or 'целевая должность'
+    evidence_json = ''
+    if evidence:
+        try:
+            import json
+            ev = dict(evidence)
+            for k in ['names', 'organizations', 'persons']:
+                ev.pop(k, None)
+            evidence_json = json.dumps(ev, ensure_ascii=False)
+        except Exception:
+            evidence_json = ''
+    prompt = 'Ты — аналитик-фактов. Извлекай ТОЛЬКО проверяемые факты из протокола. Без домыслов, без имён/организаций.\nЦелевая должность: ' + target + '\n\nФакты из evidence:\n' + evidence_json + '\n\nПротокол:\n' + (protocol_text[:8000]) + '\n\nСформируй список фактов: действия кандидата, конкретные задачи/обязанности, примеры из диалога, упомянутые ограничения/трудности. Без выводов и оценок.'
+    try:
+        return _chat_completion_text(prompt, temperature=0.0, max_tokens=600).strip()
+    except Exception:
+        return (evidence_json or protocol_text[:2000]).strip()
+
+def _critic_review_blocks(strengths, risks, conclusion, facts, target_role_hint, style_ex):
+    target = (target_role_hint or '').strip() or 'целевая должность'
+    prompt = 'Ты — строгий критик-редактор. Оцени ТОЛЬКО блоки Сильные стороны, Риски и зоны развития, Заключение по результатам оценки.\nЦелевая должность: ' + target + '\n\nКРИТЕРИИ:\n- факт->признак->вывод применимости именно к этой должности\n- только факты из списка фактов\n- нет перечисления качеств в лоб без обоснования\n- риски обоснованы с причиной и последствиями при расширении зоны ответственности\n- заключение взвешенное, без пустого высокого потенциала\n- запрещены: обладает, характеризуется, является\n- без имён/организаций\n\nСтруктура-пример (только приём):\n' + style_ex[:800] + '\n\nФакты:\n' + facts[:4000] + '\n\nСИЛЬНЫЕ СТОРОНЫ:\n' + (strengths or '') + '\n\nРИСКИ И ЗОНЫ РАЗВИТИЯ:\n' + (risks or '') + '\n\nЗАКЛЮЧЕНИЕ:\n' + (conclusion or '') + '\n\nВерни СТРОГО JSON: {"ok": true/false, "issues": ["конкретная правка"], "suggestions": "краткий план"}'
+    try:
+        return _chat_completion_json(prompt, temperature=0.0, max_tokens=700)
+    except Exception:
+        return {"ok": True, "issues": [], "suggestions": ""}
+
+def _writer_reason_reasoned(strengths, risks, conclusion, facts, target_role_hint, style_ex, feedback):
+    target = (target_role_hint or '').strip() or 'целевая должность'
+    prompt = 'Ты — писатель-аналитик. Переписывай ТОЛЬКО Сильные стороны, Риски и зоны развития, Заключение по результатам оценки.\nЦелевая должность: ' + target + '\n\nПРАВИЛА:\n- принцип: факт -> признак/умение -> вывод о применимости именно к данной должности\n- связные рассуждающие абзацы, не список клише\n- только факты, без домыслов, без имён/организаций\n- риски обоснованы конкретно\n- заключение взвешенное\n- запрещены: обладает, характеризуется, является\n- используй только приём построения из примера\n\nПример:\n' + style_ex[:800] + '\n\nФакты:\n' + facts[:4000] + '\n\nТЕКУЩИЕ:\nСИЛЬНЫЕ СТОРОНЫ:\n' + (strengths or '') + '\n\nРИСКИ:\n' + (risks or '') + '\n\nЗАКЛЮЧЕНИЕ:\n' + (conclusion or '') + '\n\nПРАВКИ:\n' + (feedback or '') + '\n\nВерни СТРОГО JSON: {"strengths": "...", "risks": "...", "conclusion": "..."}'
+    try:
+        return _chat_completion_json(prompt, temperature=0.15, max_tokens=1400)
+    except Exception:
+        return {"strengths": strengths, "risks": risks, "conclusion": conclusion}
+
+def _refine_three_blocks(report, protocol_text, evidence, target_role_hint):
+    try:
+        if not isinstance(report, dict):
+            return report
+        cs = str(report.get('strengths') or '')
+        cr = str(report.get('risks') or '')
+        cc = str(report.get('conclusion') or '')
+        if not (cs.strip() or cr.strip() or cc.strip()):
+            return report
+        style_ex = _load_reasoning_style_example()
+        facts = _analyst_facts_block(protocol_text, evidence, target_role_hint)
+        for _ in range(2):
+            crit = _critic_review_blocks(cs, cr, cc, facts, target_role_hint, style_ex)
+            if isinstance(crit, dict) and crit.get('ok') is True and not crit.get('issues'):
+                break
+            fb = ''
+            if isinstance(crit, dict):
+                fb = str(crit.get('suggestions') or '')
+                iss = crit.get('issues') or []
+                if iss:
+                    fb = fb + '\n' + '\n'.join(str(x) for x in iss)
+            rew = _writer_reason_reasoned(cs, cr, cc, facts, target_role_hint, style_ex, fb)
+            if isinstance(rew, dict):
+                if rew.get('strengths'): cs = str(rew['strengths'])
+                if rew.get('risks'): cr = str(rew['risks'])
+                if rew.get('conclusion'): cc = str(rew['conclusion'])
+            else:
+                break
+        report = dict(report)
+        report['strengths'] = cs
+        report['risks'] = cr
+        report['conclusion'] = cc
+        return report
+    except Exception:
+        return report
+
+
+
+
 def write_report(
     protocol_text: str,
     evidence: dict[str, Any] | None,
